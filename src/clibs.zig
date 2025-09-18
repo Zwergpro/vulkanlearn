@@ -2,7 +2,6 @@ const c = @cImport({
     @cInclude("vulkan/vulkan.h");
 });
 
-
 //
 // Vulkan types
 //
