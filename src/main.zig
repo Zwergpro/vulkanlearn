@@ -1,6 +1,8 @@
 const std = @import("std");
 const c = @import("clibs.zig");
 
+const glfw = @import("glfw");
+
 const vulkan_init = @import("vulkan_init.zig");
 
 pub fn main() !void {
@@ -8,6 +10,13 @@ pub fn main() !void {
     defer if (gpa.deinit() == .leak) {
         @panic("Leaked memory");
     };
+
+    var major: i32 = 0;
+    var minor: i32 = 0;
+    var rev: i32 = 0;
+
+    glfw.getVersion(&major, &minor, &rev);
+    std.debug.print("GLFW {}.{}.{}\n", .{ major, minor, rev });
 
     const allocator = gpa.allocator();
 

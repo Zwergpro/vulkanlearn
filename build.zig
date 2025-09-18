@@ -23,12 +23,18 @@ pub fn build(b: *std.Build) !void {
     }
     exe.root_module.linkSystemLibrary("vulkan", .{});
 
+
     const glfw_zig = b.dependency("glfw_zig", .{
         .target = target,
         .optimize = optimize,
     });
-    const glfw = glfw_zig.artifact("glfw");
-    exe.linkLibrary(glfw);
+    exe.linkLibrary(glfw_zig.artifact("glfw"));
+
+    const zglfw = b.dependency("zglfw", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("glfw", zglfw.module("glfw"));
 
     b.installArtifact(exe);
 
