@@ -23,6 +23,13 @@ pub fn build(b: *std.Build) !void {
     }
     exe.root_module.linkSystemLibrary("vulkan", .{});
 
+    const glfw_zig = b.dependency("glfw_zig", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const glfw = glfw_zig.artifact("glfw");
+    exe.linkLibrary(glfw);
+
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the app");
