@@ -1,7 +1,6 @@
 const std = @import("std");
 pub const c = @import("clibs.zig");
 
-
 pub const VkInstanceOpts = struct {
     application_name: [:0]const u8 = "vki",
     application_version: u32 = c.vk.MAKE_VERSION(1, 0, 0),
@@ -51,19 +50,19 @@ pub fn create_instance(alloc: std.mem.Allocator, opts: VkInstanceOpts) !Instance
     }
 
     const app_info = std.mem.zeroInit(c.vk.ApplicationInfo, .{
-        .sType            = c.vk.STRUCTURE_TYPE_APPLICATION_INFO,
-        .apiVersion       = opts.api_version,
+        .sType = c.vk.STRUCTURE_TYPE_APPLICATION_INFO,
+        .apiVersion = opts.api_version,
         .pApplicationName = opts.application_name,
-        .pEngineName      = opts.engine_name orelse opts.application_name,
+        .pEngineName = opts.engine_name orelse opts.application_name,
     });
 
     const instance_info = std.mem.zeroInit(c.vk.InstanceCreateInfo, .{
-        .sType                   = c.vk.STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pApplicationInfo        = &app_info,
-        .flags                   = c.vk.INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
-        .enabledLayerCount       = 0,
-        .ppEnabledLayerNames     = null,
-        .enabledExtensionCount   = @as(u32, @intCast(extensions.items.len)),
+        .sType = c.vk.STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pApplicationInfo = &app_info,
+        .flags = c.vk.INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
+        .enabledLayerCount = 0,
+        .ppEnabledLayerNames = null,
+        .enabledExtensionCount = @as(u32, @intCast(extensions.items.len)),
         .ppEnabledExtensionNames = extensions.items.ptr,
     });
 
@@ -71,9 +70,8 @@ pub fn create_instance(alloc: std.mem.Allocator, opts: VkInstanceOpts) !Instance
     try check_vk(c.vk.CreateInstance(&instance_info, opts.alloc_cb, &instance));
     std.log.info("Create vulkan instance.", .{});
 
-    return .{ .handle = instance};
+    return .{ .handle = instance };
 }
-
 
 pub fn check_vk(result: c.vk.Result) !void {
     return switch (result) {
