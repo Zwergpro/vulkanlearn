@@ -61,6 +61,10 @@
         //    // actually used.
         //    .lazy = false,
         //},
+        .glfw_zig = .{
+            .url = "vendor/glfw.zig",
+            .hash = "glfw_zig-1.0.0-NrvYozLXGQDolRCI33FBxomlmrMwyqlXfgNkcMwz757Y",
+        },
     },
     // Specifies the set of files and directories that are included in this package.
     // Only files and directories listed here are included in the `hash` that
