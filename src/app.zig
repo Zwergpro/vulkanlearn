@@ -38,8 +38,17 @@ pub const Application = struct {
 
     fn initEngine(self: *Self) !void {
         const required_extensions = [_][*]const u8{
-            c.vk.KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
+            c.vk.KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME, // For macOS
         };
+
+        var glfw_extension_count: u32 = 0;
+        var glfw_extensions = glfw.getRequiredInstanceExtensions(&glfw_extension_count).?;
+
+        const all_exts = try self.allocator.alloc([*]const u8, glfw_extension_count + required_extensions.len);
+        defer self.allocator.free(all_exts);
+
+        std.mem.copyForwards([*]const u8, all_exts[0..glfw_extension_count], glfw_extensions[0..glfw_extension_count]);
+        std.mem.copyForwards([*]const u8, all_exts[glfw_extension_count..], required_extensions[0..]);
 
         const vk_instance = try self.allocator.create(vki.Instance);
         self.vk_instance = vk_instance;
@@ -52,7 +61,7 @@ pub const Application = struct {
             .api_version = c.vk.MAKE_VERSION(1, 1, 0),
             .debug = true,
             .alloc_cb = self.vk_alloc_cbs,
-            .required_extensions = &required_extensions,
+            .required_extensions = all_exts,
         });
     }
 
