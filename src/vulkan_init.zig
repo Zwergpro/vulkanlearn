@@ -1,5 +1,6 @@
 const std = @import("std");
 pub const c = @import("clibs.zig");
+const glfw = @import("glfw");
 
 pub const VkInstanceOpts = struct {
     application_name: [:0]const u8 = "vki",
@@ -14,7 +15,28 @@ pub const VkInstanceOpts = struct {
 };
 
 pub const Instance = struct {
+    const Self = @This();
+
     handle: c.vk.Instance = null,
+    debug_messenger: c.vk.DebugUtilsMessengerEXT = null,
+    alloc_cb: ?*c.vk.AllocationCallbacks = null,
+
+    pub fn deinit(self: *Self) void {
+        if (self.debug_messenger != null) {
+            const destroy_fn_opt = get_vulkan_instance_func(
+                c.vk.PFN_DestroyDebugUtilsMessengerEXT,
+                self.handle,
+                "vkDestroyDebugUtilsMessengerEXT",
+            );
+            if (destroy_fn_opt) |destroy_fn| {
+                destroy_fn(self.handle, self.debug_messenger, self.alloc_cb);
+            } else {
+                std.log.warn("Can not load vkDestroyDebugUtilsMessengerEXT", .{});
+            }
+        }
+
+        c.vk.DestroyInstance(self.handle, self.alloc_cb);
+    }
 };
 
 pub fn create_instance(alloc: std.mem.Allocator, opts: VkInstanceOpts) !Instance {
@@ -77,6 +99,13 @@ pub fn create_instance(alloc: std.mem.Allocator, opts: VkInstanceOpts) !Instance
         }
     }
 
+    // If we need validation, also add the debug utils extension
+    if (enable_validation and ExtensionFinder.find("VK_EXT_debug_utils", extension_props)) {
+        try extensions.append(arena, "VK_EXT_debug_utils");
+    } else {
+        enable_validation = false;
+    }
+
     const app_info = std.mem.zeroInit(c.vk.ApplicationInfo, .{
         .sType = c.vk.STRUCTURE_TYPE_APPLICATION_INFO,
         .apiVersion = opts.api_version,
@@ -98,7 +127,83 @@ pub fn create_instance(alloc: std.mem.Allocator, opts: VkInstanceOpts) !Instance
     try check_vk(c.vk.CreateInstance(&instance_info, opts.alloc_cb, &instance));
     std.log.info("Create vulkan instance.", .{});
 
-    return .{ .handle = instance };
+    const debug_messenger = if (enable_validation)
+        try create_debug_callback(instance, opts)
+    else
+        null;
+
+    return .{
+        .handle = instance,
+        .debug_messenger = debug_messenger,
+        .alloc_cb = opts.alloc_cb,
+    };
+}
+
+fn create_debug_callback(instance: c.vk.Instance, opts: VkInstanceOpts) !c.vk.DebugUtilsMessengerEXT {
+    const create_fn_opt = get_vulkan_instance_func(
+        c.vk.PFN_CreateDebugUtilsMessengerEXT,
+        instance,
+        "vkCreateDebugUtilsMessengerEXT",
+    );
+
+    if (create_fn_opt) |create_fn| {
+        const create_info = std.mem.zeroInit(c.vk.DebugUtilsMessengerCreateInfoEXT, .{
+            .sType = c.vk.STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            .messageSeverity = c.vk.DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                c.vk.DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                c.vk.DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            .messageType = c.vk.DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                c.vk.DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                c.vk.DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+            .pfnUserCallback = opts.debug_callback orelse default_debug_callback,
+            .pUserData = null,
+        });
+        var debug_messenger: c.vk.DebugUtilsMessengerEXT = undefined;
+        try check_vk(create_fn(instance, &create_info, opts.alloc_cb, &debug_messenger));
+        std.log.info("Created vulkan debug messenger.", .{});
+        return debug_messenger;
+    }
+    return null;
+}
+
+fn default_debug_callback(
+    severity: c.vk.DebugUtilsMessageSeverityFlagBitsEXT,
+    msg_type: c.vk.DebugUtilsMessageTypeFlagsEXT,
+    callback_data: ?*const c.vk.DebugUtilsMessengerCallbackDataEXT,
+    user_data: ?*anyopaque,
+) callconv(.c) c.vk.Bool32 {
+    _ = user_data;
+    const severity_str = switch (severity) {
+        c.vk.DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT => "verbose",
+        c.vk.DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT => "info",
+        c.vk.DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT => "warning",
+        c.vk.DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT => "error",
+        else => "unknown",
+    };
+
+    const type_str = switch (msg_type) {
+        c.vk.DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT => "general",
+        c.vk.DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT => "validation",
+        c.vk.DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT => "performance",
+        else => "unknown",
+    };
+
+    const message: [*c]const u8 = if (callback_data) |cb_data| cb_data.pMessage else "NO MESSAGE!";
+    std.log.err("[{s}][{s}]. Message:\n  {s}", .{ severity_str, type_str, message });
+
+    if (severity >= c.vk.DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        @panic("Unrecoverable vulkan error.");
+    }
+
+    return c.vk.FALSE;
+}
+
+fn get_vulkan_instance_func(comptime Fn: type, instance: c.vk.Instance, name: [*c]const u8) Fn {
+    if (glfw.getInstanceProcAddress(@intFromPtr(instance), name)) |proc| {
+        return @ptrCast(proc);
+    }
+    std.log.err("Failed to resolve Vulkan proc: {s}", .{name});
+    @panic("Vulkan proc address is null");
 }
 
 pub fn check_vk(result: c.vk.Result) !void {

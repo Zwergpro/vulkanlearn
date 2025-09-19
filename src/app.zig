@@ -20,8 +20,7 @@ pub const Application = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        c.vk.DestroyInstance(self.vk_instance.handle, self.vk_alloc_cbs);
-        self.vk_instance.handle = null;
+        self.vk_instance.deinit();
         self.allocator.destroy(self.vk_instance);
 
         glfw.destroyWindow(self.window);
