@@ -18,15 +18,42 @@ pub const Instance = struct {
 };
 
 pub fn create_instance(alloc: std.mem.Allocator, opts: VkInstanceOpts) !Instance {
+    if (opts.api_version > c.vk.MAKE_VERSION(1, 0, 0)) {
+        var api_requested = opts.api_version;
+        try check_vk(c.vk.EnumerateInstanceVersion(@ptrCast(&api_requested)));
+    }
+
+    var enable_validation = opts.debug;
+
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
+
+    // Get supported layers and extensions
+    var layer_count: u32 = undefined;
+    try check_vk(c.vk.EnumerateInstanceLayerProperties(&layer_count, null));
+    const layer_props = try arena.alloc(c.vk.LayerProperties, layer_count);
+    try check_vk(c.vk.EnumerateInstanceLayerProperties(&layer_count, layer_props.ptr));
 
     var extension_count: u32 = undefined;
     try check_vk(c.vk.EnumerateInstanceExtensionProperties(null, &extension_count, null));
     const extension_props = try arena.alloc(c.vk.ExtensionProperties, extension_count);
     try check_vk(c.vk.EnumerateInstanceExtensionProperties(null, &extension_count, extension_props.ptr));
 
+    // Check if the validation layer is supported
+    var layers = std.ArrayListUnmanaged([*]const u8){};
+    const validation_layer_name: [*c]const u8 = "VK_LAYER_KHRONOS_validation";
+    if (enable_validation) {
+        enable_validation = blk: for (layer_props) |layer_prop| {
+            const layer_name: [*c]const u8 = @ptrCast(layer_prop.layerName[0..]);
+            if (std.mem.eql(u8, std.mem.span(validation_layer_name), std.mem.span(layer_name))) {
+                try layers.append(arena, validation_layer_name);
+                break :blk true;
+            }
+        } else false;
+    }
+
+    // Check if the required extensions are supported
     var extensions = std.ArrayListUnmanaged([*c]const u8){};
 
     const ExtensionFinder = struct {
@@ -41,6 +68,7 @@ pub fn create_instance(alloc: std.mem.Allocator, opts: VkInstanceOpts) !Instance
         }
     };
 
+    // Start ensuring all SDL required extensions are supported
     for (opts.required_extensions) |required_ext| {
         if (ExtensionFinder.find(required_ext, extension_props)) {
             try extensions.append(arena, required_ext);
@@ -60,8 +88,8 @@ pub fn create_instance(alloc: std.mem.Allocator, opts: VkInstanceOpts) !Instance
         .sType = c.vk.STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &app_info,
         .flags = c.vk.INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
-        .enabledLayerCount = 0,
-        .ppEnabledLayerNames = null,
+        .enabledLayerCount = @as(u32, @intCast(layers.items.len)),
+        .ppEnabledLayerNames = layers.items.ptr,
         .enabledExtensionCount = @as(u32, @intCast(extensions.items.len)),
         .ppEnabledExtensionNames = extensions.items.ptr,
     });
