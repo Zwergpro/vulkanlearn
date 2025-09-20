@@ -5,6 +5,7 @@ const inst = @import("vulkan/instance.zig");
 const dev = @import("vulkan/devices.zig");
 const c = @import("vulkan/clibs.zig");
 const queues = @import("vulkan/queues.zig");
+const surfaces = @import("vulkan/surfaces.zig");
 
 pub const Engine = struct {
     const Self = @This();
@@ -12,12 +13,14 @@ pub const Engine = struct {
     alloc: std.mem.Allocator,
     alloc_cbs: ?*c.vk.AllocationCallbacks = null,
     instance: inst.Instance,
+    surface: surfaces.Surface,
     physical_device: dev.PhysicalDevice,
     device: dev.Device,
 
-    pub fn init(alloc: std.mem.Allocator) !Self {
+    pub fn init(alloc: std.mem.Allocator, window: *glfw.Window) !Self {
         const alloc_cbs: ?*c.vk.AllocationCallbacks = null;
-        const instance = try createInstance(alloc, alloc_cbs);
+        var instance = try createInstance(alloc, alloc_cbs);
+        const surface = try surfaces.createSurface(&instance, window, alloc_cbs);
         var physical_device = try dev.pickPhysicalDevice(alloc, instance.handle);
         var queue_indices = try queues.findQueueFamilies(alloc, physical_device.handle);
         const device = try dev.createLogicalDevice(alloc, &physical_device, &queue_indices, alloc_cbs);
@@ -26,6 +29,7 @@ pub const Engine = struct {
             .alloc = alloc,
             .alloc_cbs = alloc_cbs,
             .instance = instance,
+            .surface = surface,
             .physical_device = physical_device,
             .device = device,
         };
@@ -34,6 +38,7 @@ pub const Engine = struct {
     pub fn deinit(self: *Self) void {
         self.device.deinit();
         self.physical_device.deinit();
+        self.surface.deinit(&self.instance);
         self.instance.deinit();
     }
 };
