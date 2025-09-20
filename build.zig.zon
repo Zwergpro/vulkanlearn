@@ -62,12 +62,10 @@
         //    .lazy = false,
         //},
         .glfw_zig = .{
-            .url = "vendor/glfw.zig",
-            .hash = "glfw_zig-1.0.0-NrvYozLXGQDolRCI33FBxomlmrMwyqlXfgNkcMwz757Y",
+            .path = "vendor/glfw.zig",
         },
         .zglfw = .{
-            .url = "vendor/zglfw",
-            .hash = "zglfw-0.1.0-BghZXabUAACfsXVTPWvmy44XLsc-wux2G9w8Mbp523pJ",
+            .path = "vendor/zglfw",
         },
     },
     // Specifies the set of files and directories that are included in this package.

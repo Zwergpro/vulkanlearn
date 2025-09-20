@@ -36,7 +36,7 @@ pub const Application = struct {
     }
 
     fn initEngine(self: *Self) !void {
-        self.engine = try engine.Engine.init(self.alloc);
+        self.engine = try engine.Engine.init(self.alloc, self.window);
     }
 
     fn mainLoop(self: *Self) !void {
