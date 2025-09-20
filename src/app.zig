@@ -9,7 +9,7 @@ pub const Application = struct {
 
     alloc: std.mem.Allocator,
     window: *glfw.Window,
-    engine: *engine.Engine,
+    engine: engine.Engine,
     vk_alloc_cbs: ?*c.vk.AllocationCallbacks = null,
 
     pub fn init(allocator: std.mem.Allocator) Self {
@@ -21,7 +21,7 @@ pub const Application = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.alloc.destroy(self.engine);
+        self.engine.deinit();
 
         glfw.destroyWindow(self.window);
         glfw.terminate();
@@ -36,8 +36,7 @@ pub const Application = struct {
     }
 
     fn initEngine(self: *Self) !void {
-        self.engine = try self.alloc.create(engine.Engine);
-        self.engine.* = try engine.Engine.init(self.alloc);
+        self.engine = try engine.Engine.init(self.alloc);
     }
 
     fn mainLoop(self: *Self) !void {
