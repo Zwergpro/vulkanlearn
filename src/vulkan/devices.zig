@@ -1,7 +1,8 @@
 const std = @import("std");
-const c = @import("clibs.zig");
+const c = @import("./clibs.zig");
 
-const checkVk = @import("errors.zig").checkVk;
+const checkVk = @import("./errors.zig").checkVk;
+const queues = @import("./queues.zig");
 
 pub fn pickPhysicalDevice(alloc: std.mem.Allocator, instance: c.vk.Instance) !c.vk.PhysicalDevice {
     var device_count: u32 = 0;
@@ -19,7 +20,7 @@ pub fn pickPhysicalDevice(alloc: std.mem.Allocator, instance: c.vk.Instance) !c.
 
     var selected_physical_device: c.vk.PhysicalDevice = null;
     for (physical_devices) |device| {
-        if (isDeviceSuitable(device)) {
+        if (try isDeviceSuitable(alloc, device)) {
             selected_physical_device = device;
             break;
         }
@@ -33,7 +34,7 @@ pub fn pickPhysicalDevice(alloc: std.mem.Allocator, instance: c.vk.Instance) !c.
     return selected_physical_device;
 }
 
-fn isDeviceSuitable(device: c.vk.PhysicalDevice) bool {
+fn isDeviceSuitable(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice) !bool {
     var device_pros: c.vk.PhysicalDeviceProperties = undefined;
     var device_features: c.vk.PhysicalDeviceFeatures = undefined;
 
@@ -50,5 +51,8 @@ fn isDeviceSuitable(device: c.vk.PhysicalDevice) bool {
     };
 
     std.log.info("Physical device {s} type:{s}", .{ device_pros.deviceName, device_type });
-    return device_pros.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+
+    var indices = try queues.findQueueFamilies(alloc, device);
+
+    return device_pros.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU and indices.isComplete();
 }
