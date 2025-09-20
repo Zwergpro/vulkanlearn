@@ -1,27 +1,27 @@
 const std = @import("std");
 const glfw = @import("glfw");
-const c = @import("clibs.zig");
-const vki = @import("vulkan_init.zig");
+const c = @import("vulkan/clibs.zig");
+
+const engine = @import("engine.zig");
 
 pub const Application = struct {
     const Self = @This();
 
-    allocator: std.mem.Allocator,
+    alloc: std.mem.Allocator,
     window: *glfw.Window,
-    vk_instance: *vki.Instance,
+    engine: *engine.Engine,
     vk_alloc_cbs: ?*c.vk.AllocationCallbacks = null,
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
-            .allocator = allocator,
+            .alloc = allocator,
             .window = undefined,
-            .vk_instance = undefined,
+            .engine = undefined,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.vk_instance.deinit();
-        self.allocator.destroy(self.vk_instance);
+        self.alloc.destroy(self.engine);
 
         glfw.destroyWindow(self.window);
         glfw.terminate();
@@ -36,32 +36,8 @@ pub const Application = struct {
     }
 
     fn initEngine(self: *Self) !void {
-        const required_extensions = [_][*]const u8{
-            c.vk.KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME, // For macOS
-        };
-
-        var glfw_extension_count: u32 = 0;
-        var glfw_extensions = glfw.getRequiredInstanceExtensions(&glfw_extension_count).?;
-
-        const all_exts = try self.allocator.alloc([*]const u8, glfw_extension_count + required_extensions.len);
-        defer self.allocator.free(all_exts);
-
-        std.mem.copyForwards([*]const u8, all_exts[0..glfw_extension_count], glfw_extensions[0..glfw_extension_count]);
-        std.mem.copyForwards([*]const u8, all_exts[glfw_extension_count..], required_extensions[0..]);
-
-        const vk_instance = try self.allocator.create(vki.Instance);
-        self.vk_instance = vk_instance;
-
-        vk_instance.* = try vki.create_instance(self.allocator, .{
-            .application_name = "VkGuide",
-            .application_version = c.vk.MAKE_VERSION(0, 1, 0),
-            .engine_name = "VkGuide",
-            .engine_version = c.vk.MAKE_VERSION(0, 1, 0),
-            .api_version = c.vk.MAKE_VERSION(1, 1, 0),
-            .debug = true,
-            .alloc_cb = self.vk_alloc_cbs,
-            .required_extensions = all_exts,
-        });
+        self.engine = try self.alloc.create(engine.Engine);
+        self.engine.* = try engine.Engine.init(self.alloc);
     }
 
     fn mainLoop(self: *Self) !void {
