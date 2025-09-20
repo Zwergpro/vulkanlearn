@@ -1,7 +1,7 @@
 const std = @import("std");
 const glfw = @import("glfw");
-const c = @import("vulkan/clibs.zig");
 
+const c = @import("vulkan/clibs.zig");
 const engine = @import("engine.zig");
 
 pub const Application = struct {

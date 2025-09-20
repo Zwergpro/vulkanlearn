@@ -6,7 +6,6 @@ const c = @import("clibs.zig");
 
 const checkVk = @import("errors.zig").checkVk;
 
-
 pub const VkInstanceOpts = struct {
     application_name: [:0]const u8 = "vki",
     application_version: u32 = c.vk.MAKE_VERSION(1, 0, 0),

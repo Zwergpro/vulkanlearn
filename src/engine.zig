@@ -1,9 +1,9 @@
 const std = @import("std");
-
-const inst = @import("vulkan/instance.zig");
-const c = @import("vulkan/clibs.zig");
 const glfw = @import("glfw");
 
+const inst = @import("vulkan/instance.zig");
+const dev = @import("vulkan/devices.zig");
+const c = @import("vulkan/clibs.zig");
 
 pub const Engine = struct {
     const Self = @This();
@@ -11,24 +11,26 @@ pub const Engine = struct {
     alloc: std.mem.Allocator,
     alloc_cbs: ?*c.vk.AllocationCallbacks = null,
     instance: inst.Instance,
+    physical_device: c.vk.PhysicalDevice,
 
     pub fn init(alloc: std.mem.Allocator) !Self {
         const alloc_cbs: ?*c.vk.AllocationCallbacks = null;
         const instance = try createInstance(alloc, alloc_cbs);
+        const physical_device = try dev.pickPhysicalDevice(alloc, instance.handle);
 
         return .{
             .alloc = alloc,
             .alloc_cbs = alloc_cbs,
             .instance = instance,
+            .physical_device = physical_device,
         };
     }
 };
 
-
 fn createInstance(alloc: std.mem.Allocator, alloc_cbs: ?*c.vk.AllocationCallbacks) !inst.Instance {
     const required_extensions = [_][*]const u8{
         c.vk.KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME, // For macOS
-        };
+    };
 
     var glfw_extension_count: u32 = 0;
     var glfw_extensions = glfw.getRequiredInstanceExtensions(&glfw_extension_count).?;
