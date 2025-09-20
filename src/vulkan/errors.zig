@@ -1,6 +1,5 @@
 const c = @import("clibs.zig");
 
-
 pub fn checkVk(result: c.vk.Result) !void {
     return switch (result) {
         c.vk.SUCCESS => {},
