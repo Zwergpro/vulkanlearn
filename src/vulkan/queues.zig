@@ -27,6 +27,7 @@ pub fn findQueueFamilies(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice) 
     for (queue_families) |q_family| {
         if (q_family.queueFlags & c.vk.QUEUE_GRAPHICS_BIT == c.vk.QUEUE_GRAPHICS_BIT) {
             indices.graphic_family = i;
+            break;
         }
         i += 1;
     }
