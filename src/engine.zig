@@ -4,6 +4,7 @@ const glfw = @import("glfw");
 const inst = @import("vulkan/instance.zig");
 const dev = @import("vulkan/devices.zig");
 const c = @import("vulkan/clibs.zig");
+const queues = @import("vulkan/queues.zig");
 
 pub const Engine = struct {
     const Self = @This();
@@ -11,19 +12,29 @@ pub const Engine = struct {
     alloc: std.mem.Allocator,
     alloc_cbs: ?*c.vk.AllocationCallbacks = null,
     instance: inst.Instance,
-    physical_device: c.vk.PhysicalDevice,
+    physical_device: dev.PhysicalDevice,
+    device: dev.Device,
 
     pub fn init(alloc: std.mem.Allocator) !Self {
         const alloc_cbs: ?*c.vk.AllocationCallbacks = null;
         const instance = try createInstance(alloc, alloc_cbs);
-        const physical_device = try dev.pickPhysicalDevice(alloc, instance.handle);
+        var physical_device = try dev.pickPhysicalDevice(alloc, instance.handle);
+        var queue_indices = try queues.findQueueFamilies(alloc, physical_device.handle);
+        const device = try dev.createLogicalDevice(alloc, &physical_device, &queue_indices, alloc_cbs);
 
         return .{
             .alloc = alloc,
             .alloc_cbs = alloc_cbs,
             .instance = instance,
             .physical_device = physical_device,
+            .device = device,
         };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.device.deinit();
+        self.physical_device.deinit();
+        self.instance.deinit();
     }
 };
 

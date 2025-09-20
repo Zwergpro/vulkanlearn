@@ -2,7 +2,7 @@ const std = @import("std");
 const app = @import("app.zig");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa.deinit() == .leak) {
         @panic("Leaked memory");
     };
