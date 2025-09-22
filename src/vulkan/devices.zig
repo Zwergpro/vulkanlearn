@@ -102,38 +102,40 @@ pub fn createLogicalDevice(
     physical_device: *PhysicalDevice,
     alloc_cbs: ?*c.vk.AllocationCallbacks,
 ) !Device {
-    // Init queues
-    var queue_create_infos = std.ArrayList(c.vk.DeviceQueueCreateInfo){};
-    defer queue_create_infos.deinit(alloc);
-
+    // Collect unique queue families
     var unique_queue_families = std.AutoHashMap(u32, void).init(alloc);
     defer unique_queue_families.deinit();
 
     try unique_queue_families.put(physical_device.queue_indices.graphic_family.?, {});
     try unique_queue_families.put(physical_device.queue_indices.present_family.?, {});
 
-    var queue_priority: f32 = 1.0;
+    // Build queue create infos
+    var queue_create_infos = std.ArrayList(c.vk.DeviceQueueCreateInfo){};
+    defer queue_create_infos.deinit(alloc);
 
-    var unique_queue_families_it = unique_queue_families.keyIterator();
-    while (unique_queue_families_it.next()) |uniq_queue_falimiy_idx_ptr| {
-        const queue_create_info = std.mem.zeroInit(c.vk.DeviceQueueCreateInfo, .{
+    const queue_priority: f32 = 1.0;
+
+    var it = unique_queue_families.keyIterator();
+    while (it.next()) |family_idx_ptr| {
+        const info = std.mem.zeroInit(c.vk.DeviceQueueCreateInfo, .{
             .sType = c.vk.STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .queueFamilyIndex = uniq_queue_falimiy_idx_ptr.*,
+            .queueFamilyIndex = family_idx_ptr.*,
             .pQueuePriorities = &queue_priority,
             .queueCount = 1,
         });
-        try queue_create_infos.append(alloc, queue_create_info);
+        try queue_create_infos.append(alloc, info);
     }
 
+    // Enable required extensions (e.g., VK_KHR_portability_subset if supported)
     var enabled_extensions = std.ArrayListUnmanaged([*]const u8){};
     defer enabled_extensions.deinit(alloc);
 
-    // VK_KHR_portability_subset must be enabled because physical device VkPhysicalDevice supports it
-    const VK_KHR_portability_subset: [*c]const u8 = "VK_KHR_portability_subset";
+    const portability_ext_name = "VK_KHR_portability_subset";
     for (physical_device.extensions) |ext| {
-        const ext_name: [*c]const u8 = @ptrCast(ext.extensionName[0..]);
-        if (std.mem.eql(u8, std.mem.span(ext_name), std.mem.span(VK_KHR_portability_subset))) {
-            try enabled_extensions.append(alloc, VK_KHR_portability_subset);
+        const ext_name: [*:0]const u8 = @ptrCast(&ext.extensionName);
+        if (std.mem.eql(u8, std.mem.span(ext_name), portability_ext_name)) {
+            try enabled_extensions.append(alloc, portability_ext_name);
+            break; // only need to add once
         }
     }
 
