@@ -55,10 +55,10 @@ pub const Application = struct {
         var rev: i32 = 0;
 
         glfw.getVersion(&major, &minor, &rev);
-        std.debug.print("GLFW {}.{}.{}\n", .{ major, minor, rev });
+        std.log.info("GLFW {}.{}.{}", .{ major, minor, rev });
 
         try glfw.init();
-        std.debug.print("GLFW Init Succeeded.\n", .{});
+        std.log.info("GLFW Init Succeeded.", .{});
 
         glfw.windowHint(glfw.ClientAPI, glfw.NoAPI);
         glfw.windowHint(glfw.Resizable, 0);
