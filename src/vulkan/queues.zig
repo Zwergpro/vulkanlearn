@@ -34,7 +34,7 @@ pub fn findQueueFamilies(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice, 
         var present_support: c.vk.Bool32 = 0;
         try checkVk(c.vk.GetPhysicalDeviceSurfaceSupportKHR(device, i, surface.handle, &present_support));
 
-        if (present_support != 0) {
+        if (present_support != c.vk.FALSE) {
             indices.present_family = i;
         }
 

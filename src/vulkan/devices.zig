@@ -1,5 +1,6 @@
 const std = @import("std");
 const c = @import("./clibs.zig");
+const buildin = @import("builtin");
 
 const checkVk = @import("./errors.zig").checkVk;
 const queues = @import("./queues.zig");
@@ -36,10 +37,12 @@ pub fn pickPhysicalDevice(alloc: std.mem.Allocator, instance: c.vk.Instance, sur
     try checkVk(c.vk.EnumeratePhysicalDevices(instance, &device_count, physical_devices.ptr));
 
     for (physical_devices) |device| {
-        const physical_device = try createPhysicalDevice(alloc, device, surface);
+        var physical_device = try createPhysicalDevice(alloc, device, surface);
         if (try isDeviceSuitable(physical_device)) {
             return physical_device;
         }
+        // Not suitable; free resources before checking next device
+        physical_device.deinit();
     }
 
     std.log.err("Failed to find a suitable GPU!", .{});
@@ -64,22 +67,32 @@ fn createPhysicalDevice(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice, s
     physical_device.queue_indices = try alloc.create(queues.QueueFamilyIndices);
     physical_device.queue_indices.* = try queues.findQueueFamilies(alloc, device, surface);
 
+    switch (buildin.os.tag) {
+        // Do not enable any optional features by default; Metal doesn't support robust buffer access
+        .ios, .macos, .tvos, .watchos => {
+            physical_device.features.robustBufferAccess = c.vk.FALSE;
+        },
+        else => {},
+    }
+
     return physical_device;
 }
 
 fn isDeviceSuitable(device: PhysicalDevice) !bool {
-    // Add support for VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+    // Accept both integrated and discrete GPUs; log accurate type
     const device_type = switch (device.properties.deviceType) {
         c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU => "PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU",
         c.vk.PHYSICAL_DEVICE_TYPE_DISCRETE_GPU => "PHYSICAL_DEVICE_TYPE_DISCRETE_GPU",
-        c.vk.PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU => "PHYSICAL_DEVICE_TYPE_DISCRETE_GPU",
-        c.vk.PHYSICAL_DEVICE_TYPE_CPU => "PHYSICAL_DEVICE_TYPE_DISCRETE_GPU",
+        c.vk.PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU => "PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU",
+        c.vk.PHYSICAL_DEVICE_TYPE_CPU => "PHYSICAL_DEVICE_TYPE_CPU",
         else => "PHYSICAL_DEVICE_TYPE_OTHER",
     };
 
     std.log.info("Physical device {s} type:{s}", .{ device.properties.deviceName, device_type });
 
-    return device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU and device.queue_indices.isComplete();
+    const is_preferred_type = device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU or
+        device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+    return is_preferred_type and device.queue_indices.isComplete();
 }
 
 pub const Device = struct {
@@ -127,14 +140,15 @@ pub fn createLogicalDevice(
     }
 
     // Enable required extensions (e.g., VK_KHR_portability_subset if supported)
-    var enabled_extensions = std.ArrayListUnmanaged([*]const u8){};
+    var enabled_extensions = std.ArrayList([*]const u8){};
     defer enabled_extensions.deinit(alloc);
 
-    const portability_ext_name = "VK_KHR_portability_subset";
+    const portability_ext_name: [*c]const u8 = "VK_KHR_portability_subset";
     for (physical_device.extensions) |ext| {
-        const ext_name: [*:0]const u8 = @ptrCast(&ext.extensionName);
-        if (std.mem.eql(u8, std.mem.span(ext_name), portability_ext_name)) {
-            try enabled_extensions.append(alloc, portability_ext_name);
+        const ext_name: [*c]const u8 = @ptrCast(ext.extensionName[0..]);
+        if (std.mem.eql(u8, std.mem.span(ext_name), std.mem.span(portability_ext_name))) {
+            // Append the zero-terminated name coming from Vulkan props
+            try enabled_extensions.append(alloc, ext_name);
             break; // only need to add once
         }
     }
