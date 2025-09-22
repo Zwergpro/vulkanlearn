@@ -20,10 +20,9 @@ pub const Engine = struct {
     pub fn init(alloc: std.mem.Allocator, window: *glfw.Window) !Self {
         const alloc_cbs: ?*c.vk.AllocationCallbacks = null;
         var instance = try createInstance(alloc, alloc_cbs);
-        const surface = try surfaces.createSurface(&instance, window, alloc_cbs);
-        var physical_device = try dev.pickPhysicalDevice(alloc, instance.handle);
-        var queue_indices = try queues.findQueueFamilies(alloc, physical_device.handle);
-        const device = try dev.createLogicalDevice(alloc, &physical_device, &queue_indices, alloc_cbs);
+        var surface = try surfaces.createSurface(&instance, window, alloc_cbs);
+        var physical_device = try dev.pickPhysicalDevice(alloc, instance.handle, &surface);
+        const device = try dev.createLogicalDevice(alloc, &physical_device, alloc_cbs);
 
         return .{
             .alloc = alloc,
