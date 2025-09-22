@@ -3,6 +3,7 @@ const c = @import("./clibs.zig");
 
 const checkVk = @import("./errors.zig").checkVk;
 const queues = @import("./queues.zig");
+const vk_surface = @import("./surfaces.zig");
 
 pub const PhysicalDevice = struct {
     const Self = @This();
@@ -12,13 +13,15 @@ pub const PhysicalDevice = struct {
     properties: c.vk.PhysicalDeviceProperties = undefined,
     features: c.vk.PhysicalDeviceFeatures = undefined,
     extensions: []c.vk.ExtensionProperties = undefined,
+    queue_indices: *queues.QueueFamilyIndices = undefined,
 
     pub fn deinit(self: Self) void {
+        self.alloc.destroy(self.queue_indices);
         self.alloc.free(self.extensions);
     }
 };
 
-pub fn pickPhysicalDevice(alloc: std.mem.Allocator, instance: c.vk.Instance) !PhysicalDevice {
+pub fn pickPhysicalDevice(alloc: std.mem.Allocator, instance: c.vk.Instance, surface: *vk_surface.Surface) !PhysicalDevice {
     var device_count: u32 = 0;
     try checkVk(c.vk.EnumeratePhysicalDevices(instance, &device_count, null));
 
@@ -33,8 +36,8 @@ pub fn pickPhysicalDevice(alloc: std.mem.Allocator, instance: c.vk.Instance) !Ph
     try checkVk(c.vk.EnumeratePhysicalDevices(instance, &device_count, physical_devices.ptr));
 
     for (physical_devices) |device| {
-        const physical_device = try createPhysicalDevice(alloc, device);
-        if (try isDeviceSuitable(alloc, physical_device)) {
+        const physical_device = try createPhysicalDevice(alloc, device, surface);
+        if (try isDeviceSuitable(physical_device)) {
             return physical_device;
         }
     }
@@ -43,7 +46,7 @@ pub fn pickPhysicalDevice(alloc: std.mem.Allocator, instance: c.vk.Instance) !Ph
     return error.physical_device_not_found;
 }
 
-fn createPhysicalDevice(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice) !PhysicalDevice {
+fn createPhysicalDevice(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice, surface: *vk_surface.Surface) !PhysicalDevice {
     var physical_device = PhysicalDevice{
         .alloc = alloc,
         .handle = device,
@@ -58,10 +61,13 @@ fn createPhysicalDevice(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice) !
 
     try checkVk(c.vk.EnumerateDeviceExtensionProperties(physical_device.handle, null, &properties_count, physical_device.extensions.ptr));
 
+    physical_device.queue_indices = try alloc.create(queues.QueueFamilyIndices);
+    physical_device.queue_indices.* = try queues.findQueueFamilies(alloc, device, surface);
+
     return physical_device;
 }
 
-fn isDeviceSuitable(alloc: std.mem.Allocator, device: PhysicalDevice) !bool {
+fn isDeviceSuitable(device: PhysicalDevice) !bool {
     // Add support for VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
     const device_type = switch (device.properties.deviceType) {
         c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU => "PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU",
@@ -73,9 +79,7 @@ fn isDeviceSuitable(alloc: std.mem.Allocator, device: PhysicalDevice) !bool {
 
     std.log.info("Physical device {s} type:{s}", .{ device.properties.deviceName, device_type });
 
-    var indices = try queues.findQueueFamilies(alloc, device.handle);
-
-    return device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU and indices.isComplete();
+    return device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU and device.queue_indices.isComplete();
 }
 
 pub const Device = struct {
@@ -84,7 +88,7 @@ pub const Device = struct {
     handle: c.vk.Device = null,
     alloc_cbs: ?*c.vk.AllocationCallbacks = null,
     graphics_queue: c.vk.Queue = null,
-    // present_queue: c.vk.Queue = null,
+    present_queue: c.vk.Queue = null,
     // compute_queue: c.vk.Queue = null,
     // transfer_queue: c.vk.Queue = null,
 
@@ -93,11 +97,15 @@ pub const Device = struct {
     }
 };
 
-pub fn createLogicalDevice(alloc: std.mem.Allocator, physical_device: *PhysicalDevice, queue_indices: *queues.QueueFamilyIndices, alloc_cbs: ?*c.vk.AllocationCallbacks) !Device {
+pub fn createLogicalDevice(
+    alloc: std.mem.Allocator,
+    physical_device: *PhysicalDevice,
+    alloc_cbs: ?*c.vk.AllocationCallbacks,
+) !Device {
     var queue_priority: f32 = 1.0;
     var queue_create_info = std.mem.zeroInit(c.vk.DeviceQueueCreateInfo, .{
         .sType = c.vk.STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = queue_indices.graphic_family.?,
+        .queueFamilyIndex = physical_device.queue_indices.graphic_family.?,
         .pQueuePriorities = &queue_priority,
         .queueCount = 1,
     });
@@ -128,7 +136,7 @@ pub fn createLogicalDevice(alloc: std.mem.Allocator, physical_device: *PhysicalD
     try checkVk(c.vk.CreateDevice(physical_device.handle, &create_info, alloc_cbs, &device));
 
     var graphics_queue: c.vk.Queue = null;
-    c.vk.GetDeviceQueue(device, queue_indices.graphic_family.?, 0, &graphics_queue);
+    c.vk.GetDeviceQueue(device, physical_device.queue_indices.graphic_family.?, 0, &graphics_queue);
 
     return .{
         .handle = device,
