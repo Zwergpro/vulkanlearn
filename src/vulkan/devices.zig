@@ -102,13 +102,28 @@ pub fn createLogicalDevice(
     physical_device: *PhysicalDevice,
     alloc_cbs: ?*c.vk.AllocationCallbacks,
 ) !Device {
+    // Init queues
+    var queue_create_infos = std.ArrayList(c.vk.DeviceQueueCreateInfo){};
+    defer queue_create_infos.deinit(alloc);
+
+    var unique_queue_families = std.AutoHashMap(u32, void).init(alloc);
+    defer unique_queue_families.deinit();
+
+    try unique_queue_families.put(physical_device.queue_indices.graphic_family.?, {});
+    try unique_queue_families.put(physical_device.queue_indices.present_family.?, {});
+
     var queue_priority: f32 = 1.0;
-    var queue_create_info = std.mem.zeroInit(c.vk.DeviceQueueCreateInfo, .{
-        .sType = c.vk.STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = physical_device.queue_indices.graphic_family.?,
-        .pQueuePriorities = &queue_priority,
-        .queueCount = 1,
-    });
+
+    var unique_queue_families_it = unique_queue_families.keyIterator();
+    while (unique_queue_families_it.next()) |uniq_queue_falimiy_idx_ptr| {
+        const queue_create_info = std.mem.zeroInit(c.vk.DeviceQueueCreateInfo, .{
+            .sType = c.vk.STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .queueFamilyIndex = uniq_queue_falimiy_idx_ptr.*,
+            .pQueuePriorities = &queue_priority,
+            .queueCount = 1,
+        });
+        try queue_create_infos.append(alloc, queue_create_info);
+    }
 
     var enabled_extensions = std.ArrayListUnmanaged([*]const u8){};
     defer enabled_extensions.deinit(alloc);
@@ -124,8 +139,8 @@ pub fn createLogicalDevice(
 
     var create_info = std.mem.zeroInit(c.vk.DeviceCreateInfo, .{
         .sType = c.vk.STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pQueueCreateInfos = &queue_create_info,
-        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = queue_create_infos.items.ptr,
+        .queueCreateInfoCount = @as(u32, @intCast(queue_create_infos.items.len)),
         .pEnabledFeatures = &physical_device.features,
         .enabledExtensionCount = @as(u32, @intCast(enabled_extensions.items.len)),
         .ppEnabledExtensionNames = enabled_extensions.items.ptr,
@@ -138,9 +153,13 @@ pub fn createLogicalDevice(
     var graphics_queue: c.vk.Queue = null;
     c.vk.GetDeviceQueue(device, physical_device.queue_indices.graphic_family.?, 0, &graphics_queue);
 
+    var present_queue: c.vk.Queue = null;
+    c.vk.GetDeviceQueue(device, physical_device.queue_indices.present_family.?, 0, &present_queue);
+
     return .{
         .handle = device,
         .alloc_cbs = alloc_cbs,
         .graphics_queue = graphics_queue,
+        .present_queue = present_queue,
     };
 }
