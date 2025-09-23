@@ -38,7 +38,7 @@ pub fn pickPhysicalDevice(alloc: std.mem.Allocator, instance: c.vk.Instance, sur
 
     for (physical_devices) |device| {
         var physical_device = try createPhysicalDevice(alloc, device, surface);
-        if (try isDeviceSuitable(&physical_device)) {
+        if (try isDeviceSuitable(alloc, &physical_device, surface)) {
             return physical_device;
         }
         // Not suitable; free resources before checking next device
@@ -78,7 +78,7 @@ fn createPhysicalDevice(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice, s
     return physical_device;
 }
 
-fn isDeviceSuitable(device: *PhysicalDevice) !bool {
+fn isDeviceSuitable(alloc: std.mem.Allocator, device: *PhysicalDevice, surface: *vk_surface.Surface) !bool {
     // Accept both integrated and discrete GPUs; log accurate type
     const device_type = switch (device.properties.deviceType) {
         c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU => "PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU",
@@ -90,12 +90,19 @@ fn isDeviceSuitable(device: *PhysicalDevice) !bool {
 
     std.log.info("Physical device {s} type:{s}", .{ device.properties.deviceName, device_type });
 
-    const is_preferred_type = (
-        device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU or
-        device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
-    );
+    const is_preferred_type = (device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU or
+        device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_DISCRETE_GPU);
     const is_extensionn_supported = try checkDeviceExtensionSupport(device);
-    return is_preferred_type and device.queue_indices.isComplete() and is_extensionn_supported;
+
+    var swap_chain_adequate = false;
+    if (is_extensionn_supported) {
+        var swap_chain_support = try SwapchainSupportInfo.init(alloc, device, surface);
+        defer swap_chain_support.deinit();
+
+        swap_chain_adequate = swap_chain_support.formats.len > 0 and swap_chain_support.present_modes.len > 0;
+    }
+
+    return (is_preferred_type and device.queue_indices.isComplete() and is_extensionn_supported and swap_chain_adequate);
 }
 
 fn checkDeviceExtensionSupport(device: *PhysicalDevice) !bool {
@@ -123,7 +130,6 @@ fn checkDeviceExtensionSupport(device: *PhysicalDevice) !bool {
 
     return true;
 }
-
 
 pub const Device = struct {
     const Self = @This();
@@ -174,7 +180,7 @@ pub fn createLogicalDevice(
     defer enabled_extensions.deinit(alloc);
 
     // TODO: refactor
-    try enabled_extensions.append(alloc, "VK_KHR_swapchain");  // we checked supports previously
+    try enabled_extensions.append(alloc, "VK_KHR_swapchain"); // we checked supports previously
 
     const portability_ext_name: [*c]const u8 = "VK_KHR_portability_subset";
     for (physical_device.extensions) |ext| {
@@ -212,3 +218,39 @@ pub fn createLogicalDevice(
         .present_queue = present_queue,
     };
 }
+
+const SwapchainSupportInfo = struct {
+    const Self = @This();
+
+    alloc: std.mem.Allocator,
+    capabilities: c.vk.SurfaceCapabilitiesKHR = undefined,
+    formats: []c.vk.SurfaceFormatKHR = &.{},
+    present_modes: []c.vk.PresentModeKHR = &.{},
+
+    fn init(alloc: std.mem.Allocator, device: *PhysicalDevice, surface: *vk_surface.Surface) !Self {
+        var capabilities: c.vk.SurfaceCapabilitiesKHR = undefined;
+        try checkVk(c.vk.GetPhysicalDeviceSurfaceCapabilitiesKHR(device.handle, surface.handle, &capabilities));
+
+        var format_count: u32 = undefined;
+        try checkVk(c.vk.GetPhysicalDeviceSurfaceFormatsKHR(device.handle, surface.handle, &format_count, null));
+        const formats = try alloc.alloc(c.vk.SurfaceFormatKHR, format_count);
+        try checkVk(c.vk.GetPhysicalDeviceSurfaceFormatsKHR(device.handle, surface.handle, &format_count, formats.ptr));
+
+        var present_mode_count: u32 = undefined;
+        try checkVk(c.vk.GetPhysicalDeviceSurfacePresentModesKHR(device.handle, surface.handle, &present_mode_count, null));
+        const present_modes = try alloc.alloc(c.vk.PresentModeKHR, present_mode_count);
+        try checkVk(c.vk.GetPhysicalDeviceSurfacePresentModesKHR(device.handle, surface.handle, &present_mode_count, present_modes.ptr));
+
+        return .{
+            .alloc = alloc,
+            .capabilities = capabilities,
+            .formats = formats,
+            .present_modes = present_modes,
+        };
+    }
+
+    fn deinit(self: Self) void {
+        self.alloc.free(self.formats);
+        self.alloc.free(self.present_modes);
+    }
+};
