@@ -38,7 +38,7 @@ pub fn pickPhysicalDevice(alloc: std.mem.Allocator, instance: c.vk.Instance, sur
 
     for (physical_devices) |device| {
         var physical_device = try createPhysicalDevice(alloc, device, surface);
-        if (try isDeviceSuitable(physical_device)) {
+        if (try isDeviceSuitable(&physical_device)) {
             return physical_device;
         }
         // Not suitable; free resources before checking next device
@@ -57,12 +57,12 @@ fn createPhysicalDevice(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice, s
     c.vk.GetPhysicalDeviceProperties(device, &physical_device.properties);
     c.vk.GetPhysicalDeviceFeatures(device, &physical_device.features);
 
-    var properties_count: u32 = 0;
-    try checkVk(c.vk.EnumerateDeviceExtensionProperties(physical_device.handle, null, &properties_count, null));
+    var extension_count: u32 = 0;
+    try checkVk(c.vk.EnumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, null));
 
-    physical_device.extensions = try alloc.alloc(c.vk.ExtensionProperties, properties_count);
+    physical_device.extensions = try alloc.alloc(c.vk.ExtensionProperties, extension_count);
 
-    try checkVk(c.vk.EnumerateDeviceExtensionProperties(physical_device.handle, null, &properties_count, physical_device.extensions.ptr));
+    try checkVk(c.vk.EnumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, physical_device.extensions.ptr));
 
     physical_device.queue_indices = try alloc.create(queues.QueueFamilyIndices);
     physical_device.queue_indices.* = try queues.findQueueFamilies(alloc, device, surface);
@@ -78,7 +78,7 @@ fn createPhysicalDevice(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice, s
     return physical_device;
 }
 
-fn isDeviceSuitable(device: PhysicalDevice) !bool {
+fn isDeviceSuitable(device: *PhysicalDevice) !bool {
     // Accept both integrated and discrete GPUs; log accurate type
     const device_type = switch (device.properties.deviceType) {
         c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU => "PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU",
@@ -90,10 +90,40 @@ fn isDeviceSuitable(device: PhysicalDevice) !bool {
 
     std.log.info("Physical device {s} type:{s}", .{ device.properties.deviceName, device_type });
 
-    const is_preferred_type = device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU or
-        device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-    return is_preferred_type and device.queue_indices.isComplete();
+    const is_preferred_type = (
+        device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU or
+        device.properties.deviceType == c.vk.PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+    );
+    const is_extensionn_supported = try checkDeviceExtensionSupport(device);
+    return is_preferred_type and device.queue_indices.isComplete() and is_extensionn_supported;
 }
+
+fn checkDeviceExtensionSupport(device: *PhysicalDevice) !bool {
+    const required_extensions = [_][*c]const u8{
+        "VK_KHR_swapchain",
+    };
+
+    for (required_extensions) |req_ext| {
+        var is_found = false;
+
+        for (device.extensions) |ext| {
+            const ext_name: [*c]const u8 = @ptrCast(ext.extensionName[0..]);
+
+            if (std.mem.eql(u8, std.mem.span(ext_name), std.mem.span(req_ext))) {
+                is_found = true;
+                break;
+            }
+        }
+
+        if (!is_found) {
+            std.log.err("Device extension not found: {s}", .{req_ext});
+            return false;
+        }
+    }
+
+    return true;
+}
+
 
 pub const Device = struct {
     const Self = @This();
@@ -142,6 +172,9 @@ pub fn createLogicalDevice(
     // Enable required extensions (e.g., VK_KHR_portability_subset if supported)
     var enabled_extensions = std.ArrayList([*]const u8){};
     defer enabled_extensions.deinit(alloc);
+
+    // TODO: refactor
+    try enabled_extensions.append(alloc, "VK_KHR_swapchain");  // we checked supports previously
 
     const portability_ext_name: [*c]const u8 = "VK_KHR_portability_subset";
     for (physical_device.extensions) |ext| {
