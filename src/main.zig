@@ -9,7 +9,10 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    var main_app = app.Application.init(allocator);
+    var main_app = try allocator.create(app.Application);
+    defer allocator.destroy(main_app);
+
+    main_app.* = app.Application.init(allocator);
     defer main_app.deinit();
 
     try main_app.run();

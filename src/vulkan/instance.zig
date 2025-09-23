@@ -29,7 +29,7 @@ pub const Instance = struct {
         return try create_instance(alloc, opts);
     }
 
-    pub fn deinit(self: Self) void {
+    pub fn deinit(self: *Self) void {
         if (self.debug_messenger != null) {
             const destroy_fn_opt = getVulkanInstanceFunc(
                 c.vk.PFN_DestroyDebugUtilsMessengerEXT,

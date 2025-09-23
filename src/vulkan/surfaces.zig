@@ -9,15 +9,17 @@ pub const Surface = struct {
     const Self = @This();
 
     handle: c.vk.SurfaceKHR = null,
+    instance: *vk_instance.Instance,
     alloc_cbs: ?*c.vk.AllocationCallbacks = null,
 
-    pub fn deinit(self: Self, instance: *vk_instance.Instance) void {
-        c.vk.DestroySurfaceKHR(instance.handle, self.handle, self.alloc_cbs);
+    pub fn deinit(self: Self) void {
+        c.vk.DestroySurfaceKHR(self.instance.handle, self.handle, self.alloc_cbs);
     }
 };
 
-pub fn createSurface(instance: *vk_instance.Instance, window: *glfw.Window, alloc_cbs: ?*c.vk.AllocationCallbacks) !Surface {
-    var surface = Surface{ .alloc_cbs = alloc_cbs };
+pub fn createSurface(alloc: std.mem.Allocator, instance: *vk_instance.Instance, window: *glfw.Window, alloc_cbs: ?*c.vk.AllocationCallbacks) !*Surface {
+    var surface = try alloc.create(Surface);
+    surface.* = Surface{ .alloc_cbs = alloc_cbs, .instance = instance };
 
     const glfw_alloc: ?*const glfw.VkAllocationCallbacks = if (alloc_cbs) |p| @ptrCast(p) else null;
 

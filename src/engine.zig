@@ -12,17 +12,26 @@ pub const Engine = struct {
 
     alloc: std.mem.Allocator,
     alloc_cbs: ?*c.vk.AllocationCallbacks = null,
-    instance: inst.Instance,
-    surface: surfaces.Surface,
-    physical_device: dev.PhysicalDevice,
-    device: dev.Device,
+    instance: *inst.Instance,
+    surface: *surfaces.Surface,
+    physical_device: *dev.PhysicalDevice,
+    device: *dev.Device,
+    swap_chain: *dev.SwapChain,
 
     pub fn init(alloc: std.mem.Allocator, window: *glfw.Window) !Self {
         const alloc_cbs: ?*c.vk.AllocationCallbacks = null;
-        var instance = try createInstance(alloc, alloc_cbs);
-        var surface = try surfaces.createSurface(&instance, window, alloc_cbs);
-        var physical_device = try dev.pickPhysicalDevice(alloc, instance.handle, &surface);
-        const device = try dev.createLogicalDevice(alloc, &physical_device, alloc_cbs);
+        const instance = try createInstance(alloc, alloc_cbs);
+        const surface = try surfaces.createSurface(alloc, instance, window, alloc_cbs);
+        const physical_device = try dev.pickPhysicalDevice(alloc, instance.handle, surface);
+        const device = try dev.createLogicalDevice(alloc, physical_device, alloc_cbs);
+        const swap_chain = try dev.createSwapChain(
+            alloc,
+            device,
+            physical_device,
+            surface,
+            window,
+            alloc_cbs,
+        );
 
         return .{
             .alloc = alloc,
@@ -31,18 +40,29 @@ pub const Engine = struct {
             .surface = surface,
             .physical_device = physical_device,
             .device = device,
+            .swap_chain = swap_chain,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.swap_chain.deinit();
+        self.alloc.destroy(self.swap_chain);
+
         self.device.deinit();
+        self.alloc.destroy(self.device);
+
         self.physical_device.deinit();
-        self.surface.deinit(&self.instance);
+        self.alloc.destroy(self.physical_device);
+
+        self.surface.deinit();
+        self.alloc.destroy(self.surface);
+
         self.instance.deinit();
+        self.alloc.destroy(self.instance);
     }
 };
 
-fn createInstance(alloc: std.mem.Allocator, alloc_cbs: ?*c.vk.AllocationCallbacks) !inst.Instance {
+fn createInstance(alloc: std.mem.Allocator, alloc_cbs: ?*c.vk.AllocationCallbacks) !*inst.Instance {
     const required_extensions = [_][*]const u8{
         c.vk.KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME, // For macOS
     };
@@ -66,5 +86,8 @@ fn createInstance(alloc: std.mem.Allocator, alloc_cbs: ?*c.vk.AllocationCallback
         .alloc_cbs = alloc_cbs,
         .required_extensions = all_exts,
     };
-    return try inst.Instance.init(alloc, opts);
+
+    const instance = try alloc.create(inst.Instance);
+    instance.* = try inst.Instance.init(alloc, opts);
+    return instance;
 }
