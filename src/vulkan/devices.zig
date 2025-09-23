@@ -2,6 +2,8 @@ const std = @import("std");
 const c = @import("./clibs.zig");
 const buildin = @import("builtin");
 
+const glfw = @import("glfw");
+
 const checkVk = @import("./errors.zig").checkVk;
 const queues = @import("./queues.zig");
 const vk_surface = @import("./surfaces.zig");
@@ -254,3 +256,41 @@ const SwapchainSupportInfo = struct {
         self.alloc.free(self.present_modes);
     }
 };
+
+fn chooseSwapSurfaceFormat(swap_chain_support: *SwapchainSupportInfo) c.vk.SurfaceFormatKHR {
+    for (swap_chain_support.formats) |format| {
+        if (format.format == c.vk.FORMAT_B8G8R8A8_SRGB and format.colorSpace == c.vk.COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            return format;
+        }
+    }
+    return swap_chain_support.formats[0];
+}
+
+fn chooseSwapPresentMode(swap_chain_support: *SwapchainSupportInfo) c.vk.PresentModeKHR {
+    for (swap_chain_support.present_modes) |mod| {
+        if (mod == c.vk.PRESENT_MODE_MAILBOX_KHR) {
+            return mod;
+        }
+    }
+    return c.vk.PRESENT_MODE_FIFO_KHR;
+}
+
+fn chooseSwapExtent(swap_chain_support: *SwapchainSupportInfo, window: *glfw.Window) c.vk.Extent2D {
+    if (swap_chain_support.capabilities.currentExtent.width != std.math.maxInt(u32)) {
+        return swap_chain_support.capabilities.currentExtent;
+    }
+
+    var width: u32 = 0;
+    var height: u32 = 0;
+    glfw.getFramebufferSize(window, &width, &height);
+
+    var extent = c.vk.Extent2D{
+        .width = width,
+        .height = height,
+    };
+
+    extent.width = @max(swap_chain_support.capabilities.minImageExtent.width, @min(swap_chain_support.capabilities.maxImageExtent.width, extent.width));
+    extent.height = @max(swap_chain_support.capabilities.minImageExtent.height, @min(swap_chain_support.capabilities.maxImageExtent.height, extent.height));
+
+    return extent;
+}
