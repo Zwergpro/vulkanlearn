@@ -65,8 +65,7 @@ pub const Engine = struct {
         self.surface.deinit();
         self.alloc.destroy(self.surface);
 
-        self.instance.deinit();
-        self.alloc.destroy(self.instance);
+        self.instance.destroy();
     }
 };
 
@@ -95,7 +94,6 @@ fn createInstance(alloc: std.mem.Allocator, alloc_cbs: ?*c.vk.AllocationCallback
         .required_extensions = all_exts,
     };
 
-    const instance = try alloc.create(inst.Instance);
-    instance.* = try inst.Instance.init(alloc, opts);
+    const instance = try inst.Instance.create(alloc, opts);
     return instance;
 }

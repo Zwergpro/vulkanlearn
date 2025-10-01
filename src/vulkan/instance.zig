@@ -21,12 +21,21 @@ pub const VkInstanceOpts = struct {
 pub const Instance = struct {
     const Self = @This();
 
+    alloc: std.mem.Allocator,
     handle: c.vk.Instance = null,
     debug_messenger: c.vk.DebugUtilsMessengerEXT = null,
     alloc_cbs: ?*c.vk.AllocationCallbacks = null,
 
     pub fn init(alloc: std.mem.Allocator, opts: VkInstanceOpts) !Self {
         return try create_instance(alloc, opts);
+    }
+
+    pub fn create(alloc: std.mem.Allocator, opts: VkInstanceOpts) !*Self {
+        const self = try alloc.create(Instance);
+        errdefer alloc.destroy(self);
+
+        self.* = try Instance.init(alloc, opts);
+        return self;
     }
 
     pub fn deinit(self: *Self) void {
@@ -44,6 +53,12 @@ pub const Instance = struct {
         }
 
         c.vk.DestroyInstance(self.handle, self.alloc_cbs);
+    }
+
+    pub fn destroy(self: *Self) void {
+        const allocator = self.alloc;
+        self.deinit();
+        allocator.destroy(self);
     }
 };
 
@@ -141,6 +156,7 @@ fn create_instance(alloc: std.mem.Allocator, opts: VkInstanceOpts) !Instance {
         null;
 
     return .{
+        .alloc = alloc,
         .handle = instance,
         .debug_messenger = debug_messenger,
         .alloc_cbs = opts.alloc_cbs,
