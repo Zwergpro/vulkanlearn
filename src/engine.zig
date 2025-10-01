@@ -27,7 +27,7 @@ pub const Engine = struct {
         const surface = try surfaces.Surface.create(alloc, instance, window, alloc_cbs);
         const physical_device = try dev.pickPhysicalDevice(alloc, instance.handle, surface);
         const device = try dev.Device.create(alloc, physical_device, alloc_cbs);
-        const swap_chain = try swapchain.createSwapChain(
+        const swap_chain = try swapchain.SwapChain.create(
             alloc,
             device,
             physical_device,
@@ -53,15 +53,10 @@ pub const Engine = struct {
         self.image_views.deinit();
         self.alloc.destroy(self.image_views);
 
-        self.swap_chain.deinit();
-        self.alloc.destroy(self.swap_chain);
-
+        self.swap_chain.destroy();
         self.device.destroy();
-
         self.physical_device.destroy();
-
         self.surface.destroy();
-
         self.instance.destroy();
     }
 };

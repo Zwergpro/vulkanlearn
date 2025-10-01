@@ -22,59 +22,77 @@ pub const SwapChain = struct {
     image_format: c.vk.Format,
     extent: c.vk.Extent2D,
 
+    pub fn init(
+        alloc: std.mem.Allocator,
+        device: *devices.Device,
+        physical_device: *devices.PhysicalDevice,
+        surface: *vk_surface.Surface,
+        window: *glfw.Window,
+        alloc_cbs: ?*c.vk.AllocationCallbacks,
+    ) !Self {
+        // Query swapchain support details from the physical device
+        var swap_chain_support = try SwapchainSupportInfo.init(alloc, physical_device, surface);
+        defer swap_chain_support.deinit();
+
+        // Select the best configuration options for the swapchain
+        const surface_format = chooseSwapSurfaceFormat(&swap_chain_support);
+        const present_mode = chooseSwapPresentMode(&swap_chain_support);
+        const extent = chooseSwapExtent(&swap_chain_support, window);
+        const image_count = calculateSwapChainImageCount(&swap_chain_support.capabilities);
+
+        const create_info = createSwapChainCreateInfo(
+            &swap_chain_support,
+            surface,
+            surface_format,
+            present_mode,
+            extent,
+            image_count,
+            physical_device,
+        );
+
+        var swap_chain_handle: c.vk.SwapchainKHR = undefined;
+        try checkVk(c.vk.CreateSwapchainKHR(device.handle, &create_info, alloc_cbs, &swap_chain_handle));
+
+        // Retrieve the images created by the swapchain
+        const swap_chain_images = try retrieveSwapChainImages(alloc, device.handle, swap_chain_handle);
+
+        return .{
+            .alloc = alloc,
+            .handle = swap_chain_handle,
+            .images = swap_chain_images,
+            .device = device,
+            .alloc_cbs = alloc_cbs,
+            .image_format = surface_format.format,
+            .extent = extent,
+        };
+    }
+
+    pub fn create(
+        alloc: std.mem.Allocator,
+        device: *devices.Device,
+        physical_device: *devices.PhysicalDevice,
+        surface: *vk_surface.Surface,
+        window: *glfw.Window,
+        alloc_cbs: ?*c.vk.AllocationCallbacks,
+    ) !*Self {
+        const self = try alloc.create(SwapChain);
+        errdefer alloc.destroy(self);
+
+        self.* = try SwapChain.init(alloc, device, physical_device, surface, window, alloc_cbs);
+        return self;
+    }
+
     pub fn deinit(self: *Self) void {
         self.images.deinit(self.alloc);
         c.vk.DestroySwapchainKHR(self.device.handle, self.handle, self.alloc_cbs);
     }
+
+    pub fn destroy(self: *Self) void {
+        const allocator = self.alloc;
+        self.deinit();
+        allocator.destroy(self);
+    }
 };
-
-pub fn createSwapChain(
-    alloc: std.mem.Allocator,
-    device: *devices.Device,
-    physical_device: *devices.PhysicalDevice,
-    surface: *vk_surface.Surface,
-    window: *glfw.Window,
-    alloc_cbs: ?*c.vk.AllocationCallbacks,
-) !*SwapChain {
-    // Query swapchain support details from the physical device
-    var swap_chain_support = try SwapchainSupportInfo.init(alloc, physical_device, surface);
-    defer swap_chain_support.deinit();
-
-    // Select the best configuration options for the swapchain
-    const surface_format = chooseSwapSurfaceFormat(&swap_chain_support);
-    const present_mode = chooseSwapPresentMode(&swap_chain_support);
-    const extent = chooseSwapExtent(&swap_chain_support, window);
-    const image_count = calculateSwapChainImageCount(&swap_chain_support.capabilities);
-
-    const create_info = createSwapChainCreateInfo(
-        &swap_chain_support,
-        surface,
-        surface_format,
-        present_mode,
-        extent,
-        image_count,
-        physical_device,
-    );
-
-    var swap_chain_handle: c.vk.SwapchainKHR = undefined;
-    try checkVk(c.vk.CreateSwapchainKHR(device.handle, &create_info, alloc_cbs, &swap_chain_handle));
-
-    // Retrieve the images created by the swapchain
-    const swap_chain_images = try retrieveSwapChainImages(alloc, device.handle, swap_chain_handle);
-
-    const swap_chain_ptr = try alloc.create(SwapChain);
-    swap_chain_ptr.* = .{
-        .alloc = alloc,
-        .handle = swap_chain_handle,
-        .images = swap_chain_images,
-        .device = device,
-        .alloc_cbs = alloc_cbs,
-        .image_format = surface_format.format,
-        .extent = extent,
-    };
-
-    return swap_chain_ptr;
-}
 
 // Information about swapchain support capabilities for a physical device
 pub const SwapchainSupportInfo = struct {
