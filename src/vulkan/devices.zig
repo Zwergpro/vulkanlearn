@@ -19,9 +19,52 @@ pub const PhysicalDevice = struct {
     extensions: []c.vk.ExtensionProperties = undefined,
     queue_indices: *queues.QueueFamilyIndices = undefined,
 
+    pub fn init(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice, surface: *vk_surface.Surface) !Self {
+        var physical_device = PhysicalDevice{
+            .alloc = alloc,
+            .handle = device,
+        };
+        c.vk.GetPhysicalDeviceProperties(device, &physical_device.properties);
+        c.vk.GetPhysicalDeviceFeatures(device, &physical_device.features);
+
+        var extension_count: u32 = 0;
+        try checkVk(c.vk.EnumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, null));
+
+        physical_device.extensions = try alloc.alloc(c.vk.ExtensionProperties, extension_count);
+
+        try checkVk(c.vk.EnumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, physical_device.extensions.ptr));
+
+        physical_device.queue_indices = try alloc.create(queues.QueueFamilyIndices);
+        physical_device.queue_indices.* = try queues.findQueueFamilies(alloc, device, surface);
+
+        switch (buildin.os.tag) {
+            // Do not enable any optional features by default; Metal doesn't support robust buffer access
+            .ios, .macos, .tvos, .watchos => {
+                physical_device.features.robustBufferAccess = c.vk.FALSE;
+            },
+            else => {},
+        }
+
+        return physical_device;
+    }
+
+    pub fn create(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice, surface: *vk_surface.Surface) !*Self {
+        const self = try alloc.create(PhysicalDevice);
+        errdefer alloc.destroy(self);
+
+        self.* = try PhysicalDevice.init(alloc, device, surface);
+        return self;
+    }
+
     pub fn deinit(self: *Self) void {
         self.alloc.destroy(self.queue_indices);
         self.alloc.free(self.extensions);
+    }
+
+    pub fn destroy(self: *Self) void {
+        const allocator = self.alloc;
+        self.deinit();
+        allocator.destroy(self);
     }
 };
 
@@ -40,46 +83,16 @@ pub fn pickPhysicalDevice(alloc: std.mem.Allocator, instance: c.vk.Instance, sur
     try checkVk(c.vk.EnumeratePhysicalDevices(instance, &device_count, physical_devices.ptr));
 
     for (physical_devices) |device| {
-        var physical_device = try createPhysicalDevice(alloc, device, surface);
+        var physical_device = try PhysicalDevice.create(alloc, device, surface);
         if (try isDeviceSuitable(alloc, physical_device, surface)) {
             return physical_device;
         }
         // Not suitable; free resources before checking next device
-        physical_device.deinit();
+        physical_device.destroy();
     }
 
     std.log.err("Failed to find a suitable GPU!", .{});
     return error.physical_device_not_found;
-}
-
-fn createPhysicalDevice(alloc: std.mem.Allocator, device: c.vk.PhysicalDevice, surface: *vk_surface.Surface) !*PhysicalDevice {
-    var physical_device = try alloc.create(PhysicalDevice);
-    physical_device.* = PhysicalDevice{
-        .alloc = alloc,
-        .handle = device,
-    };
-    c.vk.GetPhysicalDeviceProperties(device, &physical_device.properties);
-    c.vk.GetPhysicalDeviceFeatures(device, &physical_device.features);
-
-    var extension_count: u32 = 0;
-    try checkVk(c.vk.EnumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, null));
-
-    physical_device.extensions = try alloc.alloc(c.vk.ExtensionProperties, extension_count);
-
-    try checkVk(c.vk.EnumerateDeviceExtensionProperties(physical_device.handle, null, &extension_count, physical_device.extensions.ptr));
-
-    physical_device.queue_indices = try alloc.create(queues.QueueFamilyIndices);
-    physical_device.queue_indices.* = try queues.findQueueFamilies(alloc, device, surface);
-
-    switch (buildin.os.tag) {
-        // Do not enable any optional features by default; Metal doesn't support robust buffer access
-        .ios, .macos, .tvos, .watchos => {
-            physical_device.features.robustBufferAccess = c.vk.FALSE;
-        },
-        else => {},
-    }
-
-    return physical_device;
 }
 
 fn isDeviceSuitable(alloc: std.mem.Allocator, device: *PhysicalDevice, surface: *vk_surface.Surface) !bool {

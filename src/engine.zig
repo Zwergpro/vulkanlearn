@@ -59,8 +59,7 @@ pub const Engine = struct {
         self.device.deinit();
         self.alloc.destroy(self.device);
 
-        self.physical_device.deinit();
-        self.alloc.destroy(self.physical_device);
+        self.physical_device.destroy();
 
         self.surface.deinit();
         self.alloc.destroy(self.surface);
