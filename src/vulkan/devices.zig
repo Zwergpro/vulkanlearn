@@ -301,11 +301,17 @@ fn chooseSwapExtent(swap_chain_support: *SwapchainSupportInfo, window: *glfw.Win
 pub const SwapChain = struct {
     const Self = @This();
 
+    alloc: std.mem.Allocator,
     handle: c.vk.SwapchainKHR,
+    images: std.ArrayList(c.vk.Image),
     device: *Device,
     alloc_cbs: ?*c.vk.AllocationCallbacks = null,
 
+    image_format: c.vk.Format,
+    extent: c.vk.Extent2D,
+
     pub fn deinit(self: *Self) void {
+        self.images.deinit(self.alloc);
         c.vk.DestroySwapchainKHR(self.device.handle, self.handle, self.alloc_cbs);
     }
 };
@@ -363,11 +369,20 @@ pub fn createSwapChain(
     var swap_chain: c.vk.SwapchainKHR = undefined;
     try checkVk(c.vk.CreateSwapchainKHR(device.handle, &create_info, null, &swap_chain));
 
+    var swapchain_image_count: u32 = 0;
+    try checkVk(c.vk.GetSwapchainImagesKHR(device.handle, swap_chain, &swapchain_image_count, null));
+    const swap_chain_images = try std.ArrayList(c.vk.Image).initCapacity(alloc, swapchain_image_count);
+    try checkVk(c.vk.GetSwapchainImagesKHR(device.handle, swap_chain, &swapchain_image_count, swap_chain_images.items.ptr));
+
     const swap_chain_ptr = try alloc.create(SwapChain);
     swap_chain_ptr.* = .{
+        .alloc = alloc,
         .handle = swap_chain,
+        .images = swap_chain_images,
         .device = device,
         .alloc_cbs = alloc_cbs,
+        .image_format = surface_format.format,
+        .extent = extent,
     };
 
     return swap_chain_ptr;
