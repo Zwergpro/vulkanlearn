@@ -232,8 +232,7 @@ fn retrieveSwapChainImages(alloc: std.mem.Allocator, device_handle: c.vk.Device,
     var swapchain_image_count: u32 = 0;
     try checkVk(c.vk.GetSwapchainImagesKHR(device_handle, swap_chain_handle, &swapchain_image_count, null));
 
-    var swap_chain_images = try std.ArrayList(c.vk.Image).initCapacity(alloc, swapchain_image_count);
-    swap_chain_images.items.len = swapchain_image_count;
+    const swap_chain_images = try std.ArrayList(c.vk.Image).initCapacity(alloc, swapchain_image_count);
 
     try checkVk(c.vk.GetSwapchainImagesKHR(device_handle, swap_chain_handle, &swapchain_image_count, swap_chain_images.items.ptr));
 

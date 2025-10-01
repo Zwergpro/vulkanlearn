@@ -7,6 +7,7 @@ const c = @import("vulkan/clibs.zig");
 const queues = @import("vulkan/queues.zig");
 const swapchain = @import("vulkan/swapchain.zig");
 const surfaces = @import("vulkan/surfaces.zig");
+const image_view = @import("vulkan/image_view.zig");
 
 pub const Engine = struct {
     const Self = @This();
@@ -18,6 +19,7 @@ pub const Engine = struct {
     physical_device: *dev.PhysicalDevice,
     device: *dev.Device,
     swap_chain: *swapchain.SwapChain,
+    image_views: *image_view.ImageViews,
 
     pub fn init(alloc: std.mem.Allocator, window: *glfw.Window) !Self {
         const alloc_cbs: ?*c.vk.AllocationCallbacks = null;
@@ -33,6 +35,7 @@ pub const Engine = struct {
             window,
             alloc_cbs,
         );
+        const image_views = try image_view.createImageViews(alloc, device, swap_chain);
 
         return .{
             .alloc = alloc,
@@ -42,10 +45,14 @@ pub const Engine = struct {
             .physical_device = physical_device,
             .device = device,
             .swap_chain = swap_chain,
+            .image_views = image_views,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.image_views.deinit();
+        self.alloc.destroy(self.image_views);
+
         self.swap_chain.deinit();
         self.alloc.destroy(self.swap_chain);
 
