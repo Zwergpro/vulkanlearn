@@ -24,7 +24,7 @@ pub const Engine = struct {
     pub fn init(alloc: std.mem.Allocator, window: *glfw.Window) !Self {
         const alloc_cbs: ?*c.vk.AllocationCallbacks = null;
         const instance = try createInstance(alloc, alloc_cbs);
-        const surface = try surfaces.createSurface(alloc, instance, window, alloc_cbs);
+        const surface = try surfaces.Surface.create(alloc, instance, window, alloc_cbs);
         const physical_device = try dev.pickPhysicalDevice(alloc, instance.handle, surface);
         const device = try dev.Device.create(alloc, physical_device, alloc_cbs);
         const swap_chain = try swapchain.createSwapChain(
@@ -60,8 +60,7 @@ pub const Engine = struct {
 
         self.physical_device.destroy();
 
-        self.surface.deinit();
-        self.alloc.destroy(self.surface);
+        self.surface.destroy();
 
         self.instance.destroy();
     }
