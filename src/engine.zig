@@ -35,7 +35,7 @@ pub const Engine = struct {
             window,
             alloc_cbs,
         );
-        const image_views = try image_view.createImageViews(alloc, device, swap_chain);
+        const image_views = try image_view.ImageViews.create(alloc, device, swap_chain);
 
         return .{
             .alloc = alloc,
@@ -50,9 +50,7 @@ pub const Engine = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.image_views.deinit();
-        self.alloc.destroy(self.image_views);
-
+        self.image_views.destroy();
         self.swap_chain.destroy();
         self.device.destroy();
         self.physical_device.destroy();
