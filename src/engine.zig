@@ -5,6 +5,7 @@ const inst = @import("vulkan/instance.zig");
 const dev = @import("vulkan/devices.zig");
 const c = @import("vulkan/clibs.zig");
 const queues = @import("vulkan/queues.zig");
+const swapchain = @import("vulkan/swapchain.zig");
 const surfaces = @import("vulkan/surfaces.zig");
 
 pub const Engine = struct {
@@ -16,7 +17,7 @@ pub const Engine = struct {
     surface: *surfaces.Surface,
     physical_device: *dev.PhysicalDevice,
     device: *dev.Device,
-    swap_chain: *dev.SwapChain,
+    swap_chain: *swapchain.SwapChain,
 
     pub fn init(alloc: std.mem.Allocator, window: *glfw.Window) !Self {
         const alloc_cbs: ?*c.vk.AllocationCallbacks = null;
@@ -24,7 +25,7 @@ pub const Engine = struct {
         const surface = try surfaces.createSurface(alloc, instance, window, alloc_cbs);
         const physical_device = try dev.pickPhysicalDevice(alloc, instance.handle, surface);
         const device = try dev.createLogicalDevice(alloc, physical_device, alloc_cbs);
-        const swap_chain = try dev.createSwapChain(
+        const swap_chain = try swapchain.createSwapChain(
             alloc,
             device,
             physical_device,

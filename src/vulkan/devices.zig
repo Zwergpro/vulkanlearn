@@ -6,6 +6,7 @@ const glfw = @import("glfw");
 
 const checkVk = @import("./errors.zig").checkVk;
 const queues = @import("./queues.zig");
+const swapchain = @import("./swapchain.zig");
 const vk_surface = @import("./surfaces.zig");
 
 pub const PhysicalDevice = struct {
@@ -99,7 +100,7 @@ fn isDeviceSuitable(alloc: std.mem.Allocator, device: *PhysicalDevice, surface: 
 
     var swap_chain_adequate = false;
     if (is_extensionn_supported) {
-        var swap_chain_support = try SwapchainSupportInfo.init(alloc, device, surface);
+        var swap_chain_support = try swapchain.SwapchainSupportInfo.init(alloc, device, surface);
         defer swap_chain_support.deinit();
 
         swap_chain_adequate = swap_chain_support.formats.len > 0 and swap_chain_support.present_modes.len > 0;
@@ -222,168 +223,4 @@ pub fn createLogicalDevice(
         .present_queue = present_queue,
     };
     return device_ptr;
-}
-
-const SwapchainSupportInfo = struct {
-    const Self = @This();
-
-    alloc: std.mem.Allocator,
-    capabilities: c.vk.SurfaceCapabilitiesKHR = undefined,
-    formats: []c.vk.SurfaceFormatKHR = &.{},
-    present_modes: []c.vk.PresentModeKHR = &.{},
-
-    fn init(alloc: std.mem.Allocator, device: *PhysicalDevice, surface: *vk_surface.Surface) !Self {
-        var capabilities: c.vk.SurfaceCapabilitiesKHR = undefined;
-        try checkVk(c.vk.GetPhysicalDeviceSurfaceCapabilitiesKHR(device.handle, surface.handle, &capabilities));
-
-        var format_count: u32 = undefined;
-        try checkVk(c.vk.GetPhysicalDeviceSurfaceFormatsKHR(device.handle, surface.handle, &format_count, null));
-        const formats = try alloc.alloc(c.vk.SurfaceFormatKHR, format_count);
-        try checkVk(c.vk.GetPhysicalDeviceSurfaceFormatsKHR(device.handle, surface.handle, &format_count, formats.ptr));
-
-        var present_mode_count: u32 = undefined;
-        try checkVk(c.vk.GetPhysicalDeviceSurfacePresentModesKHR(device.handle, surface.handle, &present_mode_count, null));
-        const present_modes = try alloc.alloc(c.vk.PresentModeKHR, present_mode_count);
-        try checkVk(c.vk.GetPhysicalDeviceSurfacePresentModesKHR(device.handle, surface.handle, &present_mode_count, present_modes.ptr));
-
-        return .{
-            .alloc = alloc,
-            .capabilities = capabilities,
-            .formats = formats,
-            .present_modes = present_modes,
-        };
-    }
-
-    fn deinit(self: Self) void {
-        self.alloc.free(self.formats);
-        self.alloc.free(self.present_modes);
-    }
-};
-
-fn chooseSwapSurfaceFormat(swap_chain_support: *SwapchainSupportInfo) c.vk.SurfaceFormatKHR {
-    for (swap_chain_support.formats) |format| {
-        if (format.format == c.vk.FORMAT_B8G8R8A8_SRGB and format.colorSpace == c.vk.COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            return format;
-        }
-    }
-    return swap_chain_support.formats[0];
-}
-
-fn chooseSwapPresentMode(swap_chain_support: *SwapchainSupportInfo) c.vk.PresentModeKHR {
-    for (swap_chain_support.present_modes) |mod| {
-        if (mod == c.vk.PRESENT_MODE_MAILBOX_KHR) {
-            return mod;
-        }
-    }
-    return c.vk.PRESENT_MODE_FIFO_KHR;
-}
-
-fn chooseSwapExtent(swap_chain_support: *SwapchainSupportInfo, window: *glfw.Window) c.vk.Extent2D {
-    if (swap_chain_support.capabilities.currentExtent.width != std.math.maxInt(u32)) {
-        return swap_chain_support.capabilities.currentExtent;
-    }
-
-    var width_ci: c_int = 0;
-    var height_ci: c_int = 0;
-    glfw.getFramebufferSize(window, &width_ci, &height_ci);
-
-    var extent = c.vk.Extent2D{
-        .width = @as(u32, @intCast(width_ci)),
-        .height = @as(u32, @intCast(height_ci)),
-    };
-
-    extent.width = @max(swap_chain_support.capabilities.minImageExtent.width, @min(swap_chain_support.capabilities.maxImageExtent.width, extent.width));
-    extent.height = @max(swap_chain_support.capabilities.minImageExtent.height, @min(swap_chain_support.capabilities.maxImageExtent.height, extent.height));
-
-    return extent;
-}
-
-pub const SwapChain = struct {
-    const Self = @This();
-
-    alloc: std.mem.Allocator,
-    handle: c.vk.SwapchainKHR,
-    images: std.ArrayList(c.vk.Image),
-    device: *Device,
-    alloc_cbs: ?*c.vk.AllocationCallbacks = null,
-
-    image_format: c.vk.Format,
-    extent: c.vk.Extent2D,
-
-    pub fn deinit(self: *Self) void {
-        self.images.deinit(self.alloc);
-        c.vk.DestroySwapchainKHR(self.device.handle, self.handle, self.alloc_cbs);
-    }
-};
-
-pub fn createSwapChain(
-    alloc: std.mem.Allocator,
-    device: *Device,
-    physical_device: *PhysicalDevice,
-    surface: *vk_surface.Surface,
-    window: *glfw.Window,
-    alloc_cbs: ?*c.vk.AllocationCallbacks,
-) !*SwapChain {
-    var swap_chain_support = try SwapchainSupportInfo.init(alloc, physical_device, surface);
-    defer swap_chain_support.deinit();
-
-    const surface_format = chooseSwapSurfaceFormat(&swap_chain_support);
-    const present_mode = chooseSwapPresentMode(&swap_chain_support);
-    const extent = chooseSwapExtent(&swap_chain_support, window);
-
-    var image_count = swap_chain_support.capabilities.minImageCount + 1;
-    if (swap_chain_support.capabilities.maxImageCount > 0 and image_count > swap_chain_support.capabilities.maxImageCount) {
-        image_count = swap_chain_support.capabilities.maxImageCount;
-    }
-
-    var create_info = std.mem.zeroInit(c.vk.SwapchainCreateInfoKHR, .{
-        .sType = c.vk.STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .surface = surface.handle,
-        .minImageCount = image_count,
-        .imageFormat = surface_format.format,
-        .imageColorSpace = surface_format.colorSpace,
-        .imageExtent = extent,
-        .imageArrayLayers = 1,
-        .imageUsage = c.vk.IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        .preTransform = swap_chain_support.capabilities.currentTransform,
-        .compositeAlpha = c.vk.COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = present_mode,
-        .clipped = c.vk.TRUE,
-        .oldSwapchain = null,
-    });
-
-    const queue_family_indices = [_]u32{
-        physical_device.queue_indices.graphic_family.?,
-        physical_device.queue_indices.present_family.?,
-    };
-    if (physical_device.queue_indices.graphic_family != physical_device.queue_indices.present_family) {
-        create_info.imageSharingMode = c.vk.SHARING_MODE_CONCURRENT;
-        create_info.queueFamilyIndexCount = 2;
-        create_info.pQueueFamilyIndices = &queue_family_indices;
-    } else {
-        create_info.imageSharingMode = c.vk.SHARING_MODE_EXCLUSIVE;
-        create_info.queueFamilyIndexCount = 0;
-        create_info.pQueueFamilyIndices = null;
-    }
-
-    var swap_chain: c.vk.SwapchainKHR = undefined;
-    try checkVk(c.vk.CreateSwapchainKHR(device.handle, &create_info, null, &swap_chain));
-
-    var swapchain_image_count: u32 = 0;
-    try checkVk(c.vk.GetSwapchainImagesKHR(device.handle, swap_chain, &swapchain_image_count, null));
-    const swap_chain_images = try std.ArrayList(c.vk.Image).initCapacity(alloc, swapchain_image_count);
-    try checkVk(c.vk.GetSwapchainImagesKHR(device.handle, swap_chain, &swapchain_image_count, swap_chain_images.items.ptr));
-
-    const swap_chain_ptr = try alloc.create(SwapChain);
-    swap_chain_ptr.* = .{
-        .alloc = alloc,
-        .handle = swap_chain,
-        .images = swap_chain_images,
-        .device = device,
-        .alloc_cbs = alloc_cbs,
-        .image_format = surface_format.format,
-        .extent = extent,
-    };
-
-    return swap_chain_ptr;
 }
