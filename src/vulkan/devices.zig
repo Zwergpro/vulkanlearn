@@ -151,6 +151,7 @@ fn checkDeviceExtensionSupport(device: *PhysicalDevice) !bool {
 pub const Device = struct {
     const Self = @This();
 
+    alloc: std.mem.Allocator,
     handle: c.vk.Device,
     alloc_cbs: ?*c.vk.AllocationCallbacks = null,
     graphics_queue: c.vk.Queue = null,
@@ -158,82 +159,99 @@ pub const Device = struct {
     // compute_queue: c.vk.Queue = null,
     // transfer_queue: c.vk.Queue = null,
 
-    pub fn deinit(self: Self) void {
+    pub fn init(
+        alloc: std.mem.Allocator,
+        physical_device: *PhysicalDevice,
+        alloc_cbs: ?*c.vk.AllocationCallbacks,
+    ) !Self {
+        // Collect unique queue families
+        var unique_queue_families = std.AutoHashMap(u32, void).init(alloc);
+        defer unique_queue_families.deinit();
+
+        try unique_queue_families.put(physical_device.queue_indices.graphic_family.?, {});
+        try unique_queue_families.put(physical_device.queue_indices.present_family.?, {});
+
+        // Build queue create infos
+        var queue_create_infos = std.ArrayList(c.vk.DeviceQueueCreateInfo){};
+        defer queue_create_infos.deinit(alloc);
+
+        const queue_priority: f32 = 1.0;
+
+        var it = unique_queue_families.keyIterator();
+        while (it.next()) |family_idx_ptr| {
+            const info = std.mem.zeroInit(c.vk.DeviceQueueCreateInfo, .{
+                .sType = c.vk.STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .queueFamilyIndex = family_idx_ptr.*,
+                .pQueuePriorities = &queue_priority,
+                .queueCount = 1,
+            });
+            try queue_create_infos.append(alloc, info);
+        }
+
+        // Enable required extensions (e.g., VK_KHR_portability_subset if supported)
+        var enabled_extensions = std.ArrayList([*]const u8){};
+        defer enabled_extensions.deinit(alloc);
+
+        // TODO: refactor
+        try enabled_extensions.append(alloc, "VK_KHR_swapchain"); // we checked supports previously
+
+        const portability_ext_name: [*c]const u8 = "VK_KHR_portability_subset";
+        for (physical_device.extensions) |ext| {
+            const ext_name: [*c]const u8 = @ptrCast(ext.extensionName[0..]);
+            if (std.mem.eql(u8, std.mem.span(ext_name), std.mem.span(portability_ext_name))) {
+                // Append the zero-terminated name coming from Vulkan props
+                try enabled_extensions.append(alloc, ext_name);
+                break; // only need to add once
+            }
+        }
+
+        var create_info = std.mem.zeroInit(c.vk.DeviceCreateInfo, .{
+            .sType = c.vk.STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .pQueueCreateInfos = queue_create_infos.items.ptr,
+            .queueCreateInfoCount = @as(u32, @intCast(queue_create_infos.items.len)),
+            .pEnabledFeatures = &physical_device.features,
+            .enabledExtensionCount = @as(u32, @intCast(enabled_extensions.items.len)),
+            .ppEnabledExtensionNames = enabled_extensions.items.ptr,
+            .enabledLayerCount = 0,
+        });
+
+        var device: c.vk.Device = null;
+        try checkVk(c.vk.CreateDevice(physical_device.handle, &create_info, alloc_cbs, &device));
+
+        var graphics_queue: c.vk.Queue = null;
+        c.vk.GetDeviceQueue(device, physical_device.queue_indices.graphic_family.?, 0, &graphics_queue);
+
+        var present_queue: c.vk.Queue = null;
+        c.vk.GetDeviceQueue(device, physical_device.queue_indices.present_family.?, 0, &present_queue);
+
+        return .{
+            .alloc = alloc,
+            .handle = device,
+            .alloc_cbs = alloc_cbs,
+            .graphics_queue = graphics_queue,
+            .present_queue = present_queue,
+        };
+    }
+
+    pub fn create(
+        alloc: std.mem.Allocator,
+        physical_device: *PhysicalDevice,
+        alloc_cbs: ?*c.vk.AllocationCallbacks,
+    ) !*Self {
+        const self = try alloc.create(Device);
+        errdefer alloc.destroy(self);
+
+        self.* = try Device.init(alloc, physical_device, alloc_cbs);
+        return self;
+    }
+
+    pub fn deinit(self: *Self) void {
         c.vk.DestroyDevice(self.handle, self.alloc_cbs);
     }
+
+    pub fn destroy(self: *Self) void {
+        const allocator = self.alloc;
+        self.deinit();
+        allocator.destroy(self);
+    }
 };
-
-pub fn createLogicalDevice(
-    alloc: std.mem.Allocator,
-    physical_device: *PhysicalDevice,
-    alloc_cbs: ?*c.vk.AllocationCallbacks,
-) !*Device {
-    // Collect unique queue families
-    var unique_queue_families = std.AutoHashMap(u32, void).init(alloc);
-    defer unique_queue_families.deinit();
-
-    try unique_queue_families.put(physical_device.queue_indices.graphic_family.?, {});
-    try unique_queue_families.put(physical_device.queue_indices.present_family.?, {});
-
-    // Build queue create infos
-    var queue_create_infos = std.ArrayList(c.vk.DeviceQueueCreateInfo){};
-    defer queue_create_infos.deinit(alloc);
-
-    const queue_priority: f32 = 1.0;
-
-    var it = unique_queue_families.keyIterator();
-    while (it.next()) |family_idx_ptr| {
-        const info = std.mem.zeroInit(c.vk.DeviceQueueCreateInfo, .{
-            .sType = c.vk.STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .queueFamilyIndex = family_idx_ptr.*,
-            .pQueuePriorities = &queue_priority,
-            .queueCount = 1,
-        });
-        try queue_create_infos.append(alloc, info);
-    }
-
-    // Enable required extensions (e.g., VK_KHR_portability_subset if supported)
-    var enabled_extensions = std.ArrayList([*]const u8){};
-    defer enabled_extensions.deinit(alloc);
-
-    // TODO: refactor
-    try enabled_extensions.append(alloc, "VK_KHR_swapchain"); // we checked supports previously
-
-    const portability_ext_name: [*c]const u8 = "VK_KHR_portability_subset";
-    for (physical_device.extensions) |ext| {
-        const ext_name: [*c]const u8 = @ptrCast(ext.extensionName[0..]);
-        if (std.mem.eql(u8, std.mem.span(ext_name), std.mem.span(portability_ext_name))) {
-            // Append the zero-terminated name coming from Vulkan props
-            try enabled_extensions.append(alloc, ext_name);
-            break; // only need to add once
-        }
-    }
-
-    var create_info = std.mem.zeroInit(c.vk.DeviceCreateInfo, .{
-        .sType = c.vk.STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pQueueCreateInfos = queue_create_infos.items.ptr,
-        .queueCreateInfoCount = @as(u32, @intCast(queue_create_infos.items.len)),
-        .pEnabledFeatures = &physical_device.features,
-        .enabledExtensionCount = @as(u32, @intCast(enabled_extensions.items.len)),
-        .ppEnabledExtensionNames = enabled_extensions.items.ptr,
-        .enabledLayerCount = 0,
-    });
-
-    var device: c.vk.Device = null;
-    try checkVk(c.vk.CreateDevice(physical_device.handle, &create_info, alloc_cbs, &device));
-
-    var graphics_queue: c.vk.Queue = null;
-    c.vk.GetDeviceQueue(device, physical_device.queue_indices.graphic_family.?, 0, &graphics_queue);
-
-    var present_queue: c.vk.Queue = null;
-    c.vk.GetDeviceQueue(device, physical_device.queue_indices.present_family.?, 0, &present_queue);
-
-    const device_ptr = try alloc.create(Device);
-    device_ptr.* = .{
-        .handle = device,
-        .alloc_cbs = alloc_cbs,
-        .graphics_queue = graphics_queue,
-        .present_queue = present_queue,
-    };
-    return device_ptr;
-}
