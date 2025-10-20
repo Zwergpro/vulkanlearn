@@ -36,6 +36,10 @@ pub fn build(b: *std.Build) !void {
     });
     exe.root_module.addImport("glfw", zglfw.module("glfw"));
 
+    const options = b.addOptions();
+    options.addOption([]const u8, "shaders_path", b.pathFromRoot("bin/shaders/"));
+    exe.root_module.addOptions("config", options);
+
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the app");

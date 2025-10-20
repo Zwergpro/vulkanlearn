@@ -3,3 +3,6 @@ vulkanlearn.iml
 
 .zig-cache
 zig-out
+
+
+bin/
